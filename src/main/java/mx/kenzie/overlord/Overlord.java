@@ -653,8 +653,11 @@ public final class Overlord {
      *
      * @param target       the target class
      * @param superClasses the new superclasses
+     * @deprecated Unsafe, likely to break.
      */
+    @Deprecated
     public static void addSuperclass(Class<?> target, Class<?>... superClasses) {
+        if (IS_COMPRESSED_OOP) throw new RuntimeException("This does not work safely in 64-bit java.");
         final long offset = 8L;
         final long address = unsign(UNSAFE.getInt(createEmpty(target), offset));
         for (Class<?> cls : superClasses) {
