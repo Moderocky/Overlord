@@ -59,7 +59,7 @@ final MyObject clone = Overlord.deepClone(source);
 assert original.objectField != clone.objectField;
 ```
 
-With the followinc class structure:
+With the following class structure:
 ```java
 static class NativeImplClass {
     public native String getWord();
