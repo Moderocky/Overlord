@@ -27,6 +27,19 @@ public class TransformationTest {
         assert ex != null;
     }
 
+    @Test
+    public void illegal() {
+        String string = "Hello there!";
+        Integer integer = Overlord.transform(string, Integer.class);
+
+        System.out.println(string.getClass());
+
+        assert (string + "").equals("0");
+        assert integer == 0;
+        assert string == (Object) integer;
+        assert string.getClass() == (Class<?>) Integer.class;
+    }
+
     public static class ClassA {
         public int field = 100;
 

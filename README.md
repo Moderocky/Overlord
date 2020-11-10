@@ -22,4 +22,21 @@ Features:
   * Load classes at runtime, both hidden and explicitly.
   * Create pointers to objects in memory.
  
- 
+
+### Maven Information
+```xml
+<repository>
+    <id>pan-repo</id>
+    <name>Pandaemonium Repository</name>
+    <url>https://gitlab.com/api/v4/projects/18568066/packages/maven</url>
+</repository>
+``` 
+
+```xml
+<dependency>
+    <groupId>mx.kenzie</groupId>
+    <artifactId>overlord</artifactId>
+    <version>1.0.0</version>
+    <scope>compile</scope>
+</dependency>
+```
