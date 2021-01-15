@@ -2,6 +2,7 @@ package mx.kenzie.overlord;
 
 import com.sun.management.HotSpotDiagnosticMXBean;
 import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.Nullable;
 import sun.misc.Unsafe;
 import sun.reflect.ReflectionFactory;
 
@@ -43,7 +44,7 @@ public final class Overlord {
     /**
      * A place to store blind methods used repeatedly.
      */
-    static final Method[] METHODS = new Method[8];
+    static final Method[] METHODS = new Method[16];
     /**
      * Used for contacting other Overlord implementations.
      * Currently not used.
@@ -51,7 +52,10 @@ public final class Overlord {
     static final long MALLOC_ADDRESS;
     static final Object VIRTUAL_MACHINE;
     private static final Object JDK_UNSAFE;
-
+    private static Class<?> reflectAccessClass;
+    private static Class<?> methodAccessorClass;
+    private static Object reflectAccess;
+    
     static {
         boolean IS_COMPRESSED_KLASS1;
         boolean IS_COMPRESSED_OOP1;
@@ -103,7 +107,7 @@ public final class Overlord {
             IS_COMPRESSED_OOP1 = true;
             IS_COMPRESSED_KLASS1 = true;
         }
-
+        
         IS_COMPRESSED_KLASS = IS_COMPRESSED_KLASS1;
         IS_COMPRESSED_OOP = IS_COMPRESSED_OOP1;
         VIRTUAL_MACHINE = null;
@@ -115,11 +119,21 @@ public final class Overlord {
             System.out.println("Could not expose getDeclaredConstructors0.");
         }
         try {
+            allowAccess(Module.class);
+            METHODS[5] = Module.class
+                .getDeclaredMethod("implAddExportsOrOpens", String.class, Module.class, boolean.class, boolean.class);
+            METHODS[5].setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            System.out.println("Could not expose implAddExportsOrOpens.");
+        }
+        try {
             allowAccess(Unsafe.class);
+            breakEncapsulation(JDK_UNSAFE.getClass(), true);
+            allowAccess(JDK_UNSAFE.getClass(), true);
             MethodHandles.class.getModule().addOpens(MethodHandles.class.getPackageName(), Overlord.class.getModule());
             METHODS[1] = JDK_UNSAFE.getClass()
-                    .getDeclaredMethod("defineClass", String.class, byte[].class, int.class, int.class, ClassLoader.class, ProtectionDomain.class);
-//            METHODS[1].setAccessible(true);
+                .getDeclaredMethod("defineClass", String.class, byte[].class, int.class, int.class, ClassLoader.class, ProtectionDomain.class);
+            METHODS[1].setAccessible(true);
         } catch (NoSuchMethodException e) {
             System.out.println("Could not expose defineClass.");
         }
@@ -137,6 +151,84 @@ public final class Overlord {
         } catch (NoSuchMethodException e) {
             System.out.println("Could not expose makeClassDefiner.");
         }
+        try {
+            Class<?> cls = Class.forName("java.lang.reflect.ReflectAccess");
+            allowAccess(cls);
+            reflectAccessClass = cls;
+        } catch (ClassNotFoundException e) {
+            reflectAccessClass = null;
+            System.out.println("Could not expose ReflectAccess class.");
+        }
+        try {
+            Class<?> cls = Class.forName("jdk.internal.reflect.MethodAccessor");
+            breakEncapsulation(cls, true);
+            allowAccess(cls, true);
+            methodAccessorClass = cls;
+        } catch (ClassNotFoundException e) {
+            methodAccessorClass = null;
+            System.out.println("Could not expose MethodAccessor class.");
+        }
+        try {
+            Field delegate = ReflectionFactory.class.getDeclaredField("delegate");
+            delegate.setAccessible(true);
+            Object internal = delegate.get(null);
+            breakEncapsulation(internal.getClass(), true);
+            allowAccess(internal.getClass(), true);
+            Field langReflectAccess = internal.getClass().getDeclaredField("langReflectAccess");
+            langReflectAccess.setAccessible(true);
+            reflectAccess = langReflectAccess.get(internal);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            reflectAccess = null;
+            System.out.println("Could not expose JavaLangReflectAccess instance.");
+        }
+        try {
+            METHODS[4] = reflectAccessClass.getDeclaredMethod("newConstructor",
+                Class.class,
+                Class[].class,
+                Class[].class,
+                int.class,
+                int.class,
+                String.class,
+                byte[].class,
+                byte[].class);
+            METHODS[4].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose newConstructor.");
+        }
+        try {
+            METHODS[6] = reflectAccessClass.getDeclaredMethod("getMethodAccessor", Method.class);
+            METHODS[6].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose getMethodAccessor.");
+        }
+        try {
+            METHODS[7] = reflectAccessClass.getDeclaredMethod("setMethodAccessor", Method.class, methodAccessorClass);
+            METHODS[7].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose setMethodAccessor.");
+        }
+        try {
+            breakEncapsulation(methodAccessorClass, true);
+            allowAccess(methodAccessorClass, true);
+            METHODS[8] = methodAccessorClass.getDeclaredMethod("invoke", Object.class, Object[].class);
+            METHODS[8].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose invoke (MethodAccessor).");
+        }
+        try {
+            allowAccess(Method.class);
+            METHODS[9] = Method.class.getDeclaredMethod("getRoot");
+            METHODS[9].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose getRoot.");
+        }
+        try {
+            allowAccess(Class.class);
+            METHODS[10] = Class.class.getDeclaredMethod("getMethod0", String.class, Class[].class);
+            METHODS[10].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose getMethod0.");
+        }
     }
 
     static {
@@ -148,7 +240,7 @@ public final class Overlord {
             MALLOC_ADDRESS = Long.parseLong(address);
         }
     }
-
+    
     /**
      * This is an entirely static class as everything it
      * uses is in the global state.
@@ -516,17 +608,17 @@ public final class Overlord {
      */
     @Contract(value = "null, _ -> null")
     @SuppressWarnings("unchecked")
-    public static <T> T transform(Object object, Class<T> cls) {
+    public static <T> T transform(Object object, Class<? super T> cls) {
         if (object == null) return null;
-        final T template = createEmpty(cls);
+        final T template = (T) createEmpty(cls);
         final long offset = 8;
         final long[] addresses = new long[]{
-                getAddress(template),
-                getAddress(object)
+            getAddress(template),
+            getAddress(object)
         };
         final int[] klass = new int[]{
-                UNSAFE.getInt(addresses[0] + offset),
-                UNSAFE.getInt(addresses[1] + offset)
+            UNSAFE.getInt(addresses[0] + offset),
+            UNSAFE.getInt(addresses[1] + offset)
         };
         UNSAFE.putInt(addresses[1] + offset, klass[0]);
         return (T) object;
@@ -545,10 +637,35 @@ public final class Overlord {
         try {
             return (T) UNSAFE.allocateInstance(cls);
         } catch (InstantiationException ex) {
+            if (cls.isArray()) {
+                return (T) Array.newInstance(cls.getComponentType(), 0);
+            } else if (cls.isEnum()) {
+                return cls.getEnumConstants()[0];
+            } else if (cls.isPrimitive()) {
+                return null;
+            }
             throw new RuntimeException(ex);
         }
     }
-
+    
+    @Contract(value = "null, _ -> null")
+    @SuppressWarnings("unchecked")
+    public static <T> T transformTypecast(Object object, Class<?> cls) {
+        if (object == null) return null;
+        final T template = (T) createEmpty(cls);
+        final long offset = 8;
+        final long[] addresses = new long[]{
+            getAddress(template),
+            getAddress(object)
+        };
+        final int[] klass = new int[]{
+            UNSAFE.getInt(addresses[0] + offset),
+            UNSAFE.getInt(addresses[1] + offset)
+        };
+        UNSAFE.putInt(addresses[1] + offset, klass[0]);
+        return (T) object;
+    }
+    
     /**
      * Finds the memory address of the given object.
      * This is done by creating an array and retrieving the
@@ -842,7 +959,7 @@ public final class Overlord {
         assert getMemorySize0(source) == getMemorySize0(target);
         shallowCopy0(source, target);
     }
-
+    
     static void shallowCopy0(Object source, Object destination) {
         final long sourcePointer, destinationPointer;
         final long length = getMemorySize0(source);
@@ -850,27 +967,252 @@ public final class Overlord {
         destinationPointer = getAddress(destination);
         UNSAFE.copyMemory(sourcePointer, destinationPointer, length);
     }
-
+    
+    @Deprecated
+    public static <T> Constructor<T> createConstructor() throws IllegalAccessException, InstantiationException, InvocationTargetException {
+        if (METHODS[4] == null) throw new IllegalStateException("ReflectAccess is not available in this environment.");
+        return null;
+    }
+    
+    /**
+     * Returns the class definition/data, which is transient and
+     * assigned by the JVM at runtime.
+     *
+     * This is the same as the gunk that defineClass spits back.
+     * For most classes, it will be null.
+     *
+     * @param cls the class
+     * @return the class data/def, provided by JLA
+     */
+    public static @Nullable Object getClassDefinition(final Class<?> cls) {
+        try {
+            final Object jLA = javaLangAccess();
+            if (METHODS[11] == null) {
+                Overlord.breakEncapsulation(jLA.getClass(), true);
+                Overlord.allowAccess(jLA.getClass(), true);
+                final Class<?> klass = Class.forName("java.lang.System$2");
+                Overlord.breakEncapsulation(klass, true);
+                Overlord.allowAccess(klass, true);
+                METHODS[11] = jLA.getClass().getDeclaredMethod("classData", Class.class);
+                METHODS[11].setAccessible(true);
+            }
+            return METHODS[11].invoke(jLA, cls);
+        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException | ClassNotFoundException e) {
+            UNSAFE.throwException(e);
+            return null;
+        }
+    }
+    
+    static void breakEncapsulation(Class<?> target, boolean accessNamedModules) {
+        if (!accessNamedModules) breakEncapsulation(target);
+        else {
+            try {
+                METHODS[5].invoke(target.getModule(),
+                    target.getPackageName(),
+                    Overlord.class.getModule(),
+                    false,
+                    true);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    /**
+     * This is JLA. It gives you access to some cool internal stuff.
+     * Java is a filthy capitalist and likes to hoard all the cool stuff.
+     *
+     * The proletariat masses may now rise up and mess with it. :D
+     *
+     * Returns the value from OxfordSecrets <- SharedSecrets.
+     *
+     * If anybody gets that reference, let me know and I'll give you a reward.
+     * @param <T> In case you have JLT in your classpath, you can cast this to the actual class
+     * @return JLA
+     */
+    public static <T> T javaLangAccess() {
+        return (T) OxfordSecrets.javaLangAccess;
+    }
+    
+    static void allowAccess(Class<?> target, boolean accessNamedModules) {
+        if (!accessNamedModules) allowAccess(target);
+        else {
+            try {
+                METHODS[5].invoke(target.getModule(),
+                    target.getPackageName(),
+                    Overlord.class.getModule(),
+                    true,
+                    true);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    static void breakEncapsulation(Class<?> target) {
+        target.getModule().addExports(target.getPackageName(), Overlord.class.getModule());
+    }
+    
+    /**
+     * ReflectAccess gives you the ability to mess with even cooler stuff than JLA.
+     *
+     * @param <T> In case you have JLT in your classpath, you can cast this to the actual class
+     * @return ReflectAccess instance
+     */
+    public static <T> T javaLangReflectAccess() {
+        return (T) reflectAccess;
+    }
+    
+    /**
+     * Returns the call behaviour used by methods.
+     * This is runtime-generated from the bytecode, and may be replaced by JIT later on.
+     *
+     * This will probably be null - JVM is very lazy about filling this in unless
+     * it actually has to.
+     *
+     * @param method the method
+     * @return the behaviour
+     */
+    public static @Nullable MethodBehaviour getReflectiveBehaviour(final Method method) {
+        try {
+            Object object = METHODS[6].invoke(reflectAccess, method);
+            return new Delegate(object);
+        } catch (InvocationTargetException | IllegalAccessException e) {
+            e.printStackTrace();
+            UNSAFE.throwException(e);
+            return null;
+        }
+    }
+    
+    /**
+     * Allows you to replace the behaviour of a method when it's accessed via reflection.
+     *
+     * This allows you to actually change how a method works based on whether it's called using
+     * reflection or normally. See RewriteBehaviourTest.
+     *
+     * Note: you CANNOT change the normative behaviour!!!
+     * JVM caches this in a delegate at clinit and there is no way to navigate the tree to
+     * find and replace it. JIT will also replace it later even if you access it via the stack.
+     *
+     * @param method
+     * @param behaviour
+     * @param <T>
+     */
+    public static <T extends MethodBehaviour> void setReflectiveBehaviour(final Method method, T behaviour) {
+        try {
+            Object invoker = Proxy.newProxyInstance(Overlord.class.getClassLoader(), new Class[]{
+                methodAccessorClass, MethodBehaviour.class
+            }, (proxy, none, args) -> behaviour.invoke(proxy, args));
+            METHODS[7].invoke(reflectAccess, ensureRoot(method), invoker);
+        } catch (InvocationTargetException | IllegalAccessException e) {
+            e.printStackTrace();
+            UNSAFE.throwException(e);
+        }
+    }
+    
     static void parkThread(long epochMilliStamp) {
         UNSAFE.park(true, epochMilliStamp);
     }
-
-    static void unparkThread(Thread thread) {
-        UNSAFE.unpark(thread);
+    
+    /**
+     * Ensures the root method.
+     * JDK uses a tree-leaf access tree to make sure you never get the actual root method.
+     * This navigates up the tree until it reaches the root.
+     * @param method the method
+     * @return the root of that method
+     */
+    public static Method ensureRoot(Method method) {
+        try {
+            while (METHODS[9].invoke(method) instanceof Method root)
+                method = root;
+        } catch (Throwable ex) {
+            UNSAFE.throwException(ex);
+        }
+        return method;
     }
-
+    
     static void loadFence() {
         UNSAFE.loadFence();
     }
-
+    
+    /**
+     * This might not be accurate - nobody knows the offsets for 64-bit Java.
+     * Trust me, I contacted the Hotspot contributor who wrote the code, even he doesn't know it.
+     *
+     * @param cls the class
+     * @return the address of the class
+     */
+    @Deprecated
     public static long getInternalAddress(Class<?> cls) {
         if (IS_COMPRESSED_OOP)
             return UNSAFE.getInt(cls, 84L);
         else return UNSAFE.getLong(cls, 160L);
     }
-
+    
     static void allowAccess(Class<?> target) {
         target.getModule().addOpens(target.getPackageName(), Overlord.class.getModule());
     }
-
+    
+    public static Method getRootMethod(Class<?> cls, String name, Class<?>... parameterTypes) throws InvocationTargetException, IllegalAccessException {
+        return (Method) METHODS[10].invoke(cls, name, parameterTypes);
+    }
+    
+    static Object getMethodAccessor(final Method method) throws InvocationTargetException, IllegalAccessException {
+        return METHODS[6].invoke(reflectAccess, ensureRoot(method));
+    }
+    
+    static void unparkThread(final Thread thread) {
+        UNSAFE.unpark(thread);
+    }
+    
+    /**
+     * Opens a class to your module.
+     * This bypasses the security-manager check as well.
+     * If the class is in jdk.internal, you'll want to break encapsulation on it first.
+     *
+     * @param accessor the accessor class
+     * @param target the target class
+     * @param accessNamedModules true if it's in jdk.internal, otherwise false
+     */
+    public static void allowAccess(final Class<?> accessor, final Class<?> target, final boolean accessNamedModules) {
+        if (!accessNamedModules) target.getModule().addOpens(target.getPackageName(), accessor.getModule());
+        else {
+            try {
+                METHODS[5].invoke(target.getModule(),
+                    target.getPackageName(),
+                    accessor.getModule(),
+                    true,
+                    true);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    /**
+     * Breaks the encapsulation of a java.base-only class.
+     * Adds your module to the exports.
+     * You can then open it using {@link #allowAccess(Class, Class, boolean)}
+     *
+     * This allows you to access jdk.internal things without special commandline args or all that.
+     *
+     * @param accessor the accessor class
+     * @param target the target class
+     * @param accessNamedModules true if it's in jdk.internal, otherwise false
+     */
+    public static void breakEncapsulation(final Class<?> accessor, final Class<?> target, final boolean accessNamedModules) {
+        if (!accessNamedModules) target.getModule().addExports(target.getPackageName(), accessor.getModule());
+        else {
+            try {
+                METHODS[5].invoke(target.getModule(),
+                    target.getPackageName(),
+                    accessor.getModule(),
+                    false,
+                    true);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
 }
