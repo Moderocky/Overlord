@@ -21,6 +21,9 @@ Features:
   * Use real objects to provide the implementation for native methods.
   * Load classes at runtime, both hidden and explicitly.
   * Create pointers to objects in memory.
+  * Rewrite the behaviour of a method at runtime for reflective access.
+  * Break encapsulation and open jdk.internal classes for access.
+  * Silence those pesky "illegal reflection" warnings.
  
 
 ### Maven Information
@@ -128,3 +131,20 @@ Creating an empty object:
 ```java 
 final Class1 obj = Overlord.createEmpty(Class1.class);
 ```
+
+Replacing method behaviour for reflection access:
+```java 
+{
+    Method method = Blob.class.getMethod("myMethod");
+    Overlord.setReflectiveBehaviour(method, (obj, args) -> "please don't use reflection on me!");
+}
+
+
+Method method = Blob.class.getMethod("myMethod");
+
+// method.invoke(new Blob()) == "please don't use reflection on me!"
+// new Blob().myMethod() == whatever the original was
+
+assert !method.invoke(new Blob()).equals(new Blob().myMethod());
+```
+See RewriteBehaviourTest.class for more examples.
