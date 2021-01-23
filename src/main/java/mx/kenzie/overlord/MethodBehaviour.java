@@ -17,13 +17,7 @@ public interface MethodBehaviour {
     
 }
 
-class Delegate implements MethodBehaviour {
-    
-    final Object accessor;
-    
-    Delegate(Object accessor) {
-        this.accessor = accessor;
-    }
+record Delegate(Object accessor) implements MethodBehaviour {
     
     @Override
     public Object invoke(Object obj, Object... args) throws IllegalArgumentException, InvocationTargetException {

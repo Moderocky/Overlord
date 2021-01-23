@@ -1153,6 +1153,10 @@ public final class Overlord {
         target.getModule().addOpens(target.getPackageName(), Overlord.class.getModule());
     }
     
+    /**
+     * @deprecated Use {@link #ensureRoot(Method)} instead - much easier.
+     */
+    @Deprecated
     public static Method getRootMethod(Class<?> cls, String name, Class<?>... parameterTypes) throws InvocationTargetException, IllegalAccessException {
         return (Method) METHODS[10].invoke(cls, name, parameterTypes);
     }
