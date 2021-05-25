@@ -40,7 +40,7 @@ Features:
 <dependency>
     <groupId>mx.kenzie</groupId>
     <artifactId>overlord</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <scope>compile</scope>
 </dependency>
 ```

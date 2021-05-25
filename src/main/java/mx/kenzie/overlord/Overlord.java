@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 import sun.misc.Unsafe;
 import sun.reflect.ReflectionFactory;
 
+import java.io.File;
 import java.lang.constant.Constable;
 import java.lang.invoke.MethodHandles;
 import java.lang.management.ManagementFactory;
@@ -112,19 +113,27 @@ public final class Overlord {
         IS_COMPRESSED_OOP = IS_COMPRESSED_OOP1;
         VIRTUAL_MACHINE = null;
         try {
-            allowAccess(Class.class);
+            final Field field = Class.class.getDeclaredField("module");
+            final long offset = UNSAFE.objectFieldOffset(field);
+            UNSAFE.putObject(Overlord.class, offset, Object.class.getModule());
+//            field.setAccessible(true);
+//            field.set(Overlord.class, Object.class.getModule());
+            final Method method = AccessibleObject.class.getDeclaredMethod("setAccessible0", boolean.class);
+            method.setAccessible(true);
+            METHODS[5] = Module.class
+                .getDeclaredMethod("implAddExportsOrOpens", String.class, Module.class, boolean.class, boolean.class);
+            method.invoke(METHODS[5], true);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            System.out.println("Could not expose implAddExportsOrOpens.");
+        }
+        try {
+            breakEncapsulation(Class.class, true);
+            allowAccess(Class.class, true);
             METHODS[0] = Class.class.getDeclaredMethod("getDeclaredConstructors0", boolean.class);
             METHODS[0].setAccessible(true);
         } catch (NoSuchMethodException e) {
             System.out.println("Could not expose getDeclaredConstructors0.");
-        }
-        try {
-            allowAccess(Module.class);
-            METHODS[5] = Module.class
-                .getDeclaredMethod("implAddExportsOrOpens", String.class, Module.class, boolean.class, boolean.class);
-            METHODS[5].setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            System.out.println("Could not expose implAddExportsOrOpens.");
         }
         try {
             allowAccess(Unsafe.class);
@@ -1150,7 +1159,8 @@ public final class Overlord {
     }
     
     static void allowAccess(Class<?> target) {
-        target.getModule().addOpens(target.getPackageName(), Overlord.class.getModule());
+        target.getModule()
+            .addOpens(target.getPackageName(), Overlord.class.getModule());
     }
     
     /**
