@@ -61,6 +61,7 @@ public final class Overlord {
     private static final Object JDK_UNSAFE;
     private static Class<?> reflectAccessClass;
     private static Class<?> methodAccessorClass;
+    private static Class<?> constructorAccessorClass;
     private static Object reflectAccess;
     
     static {
@@ -183,6 +184,17 @@ public final class Overlord {
             methodAccessorClass = null;
             System.out.println("Could not expose MethodAccessor class.");
         }
+
+        try {
+            Class<?> cls = Class.forName("jdk.internal.reflect.ConstructorAccessor");
+            breakEncapsulation(cls, true);
+            allowAccess(cls, true);
+            constructorAccessorClass = cls;
+        } catch (ClassNotFoundException e) {
+            constructorAccessorClass = null;
+            System.out.println("Could not expose ConstructorAccessor class.");
+        }
+
         try {
             Field delegate = ReflectionFactory.class.getDeclaredField("delegate");
             delegate.setAccessible(true);
@@ -197,18 +209,24 @@ public final class Overlord {
             System.out.println("Could not expose JavaLangReflectAccess instance.");
         }
         try {
-            METHODS[4] = reflectAccessClass.getDeclaredMethod("newConstructor",
-                Class.class,
-                Class[].class,
-                Class[].class,
-                int.class,
-                int.class,
-                String.class,
-                byte[].class,
-                byte[].class);
+            METHODS[4] = reflectAccessClass.getDeclaredMethod("newConstructorWithAccessor",
+                Constructor.class, constructorAccessorClass);
             METHODS[4].setAccessible(true);
-        } catch (NoSuchMethodException | IllegalStateException e) {
-            System.out.println("Could not expose newConstructor.");
+        } catch (NoSuchMethodException | IllegalStateException e0) {
+            try {
+                METHODS[4] = reflectAccessClass.getDeclaredMethod("newConstructor",
+                        Class.class,
+                        Class[].class,
+                        Class[].class,
+                        int.class,
+                        int.class,
+                        String.class,
+                        byte[].class,
+                        byte[].class);
+                METHODS[4].setAccessible(true);
+            } catch (NoSuchMethodException | IllegalStateException e1) {
+                System.out.println("Could not expose newConstructor.");
+            }
         }
         try {
             METHODS[6] = reflectAccessClass.getDeclaredMethod("getMethodAccessor", Method.class);
@@ -249,6 +267,21 @@ public final class Overlord {
             METHODS[12].setAccessible(true);
         } catch (NoSuchMethodException e) {
             System.out.println("Could not expose makeHiddenClassDefiner.");
+        }
+
+        try {
+            final Field field = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
+            field.setAccessible(true);
+            IMPL_LOOKUP = (MethodHandles.Lookup) field.get(null);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            System.out.println("Could not expose IMPL_LOOKUP.");
+        }
+        try {
+            METHODS[13] = OxfordSecrets.javaLangInvokeAccess().getClass()
+                    .getDeclaredMethod("serializableConstructor", Class.class, Constructor.class);
+            METHODS[13].setAccessible(true);
+        } catch (NoSuchMethodException | IllegalStateException e) {
+            System.out.println("Could not expose serializableConstructor.");
         }
     }
 
@@ -537,15 +570,12 @@ public final class Overlord {
                 Class<?>[] types = constructor.getParameterTypes();
                 for (int i = 0; i < types.length; i++) {
                     if (!types[i].isAssignableFrom(parameters[i].getClass())) continue;
-                    Constructor<T> copyConstructor = (Constructor<T>) FACTORY
-                            .newConstructorForSerialization(cls, constructor);
-                    copyConstructor.setAccessible(true);
-                    return copyConstructor.newInstance(parameters);
+                    return createSwapConstructor(cls, constructor, parameters);
                 }
             }
             return createSwapConstructor(cls, copyClass.getConstructor());
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException ex) {
-            throw new RuntimeException(ex);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -566,12 +596,19 @@ public final class Overlord {
     @SuppressWarnings("unchecked")
     public static <T> T createSwapConstructor(Class<T> cls, Constructor<?> constructor, Object... parameters) {
         try {
-            Constructor<T> copyConstructor = (Constructor<T>) FACTORY
+            final MethodHandle unreflect = (MethodHandle) METHODS[13].invoke(OxfordSecrets.javaLangInvokeAccess(), cls, constructor);
+            return (T) unreflect.invokeWithArguments(parameters);
+        } catch (final Throwable e0) {
+            // Fall back to the old implementation.
+            final Constructor<T> copyConstructor = (Constructor<T>) FACTORY
                     .newConstructorForSerialization(cls, constructor);
             copyConstructor.setAccessible(true);
-            return copyConstructor.newInstance(parameters);
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new RuntimeException(ex);
+
+            try {
+                return copyConstructor.newInstance(parameters);
+            } catch (final Throwable e1) {
+                throw new RuntimeException(e1);
+            }
         }
     }
 
