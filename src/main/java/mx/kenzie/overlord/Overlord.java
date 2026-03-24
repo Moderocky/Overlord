@@ -235,7 +235,7 @@ public final class Overlord {
             System.out.println("Could not expose getMethodAccessor.");
         }
         try {
-            METHODS[7] = reflectAccessClass.getDeclaredMethod("setMethodAccessor", Method.class, methodAccessorClass);
+            METHODS[7] = Method.class.getDeclaredMethod("setMethodAccessor", methodAccessorClass);
             METHODS[7].setAccessible(true);
         } catch (NoSuchMethodException | IllegalStateException e) {
             System.out.println("Could not expose setMethodAccessor.");
@@ -1180,7 +1180,7 @@ public final class Overlord {
             Object invoker = Proxy.newProxyInstance(Overlord.class.getClassLoader(), new Class[]{
                 methodAccessorClass, MethodBehaviour.class
             }, (proxy, none, args) -> behaviour.invoke(proxy, args));
-            METHODS[7].invoke(reflectAccess, ensureRoot(method), invoker);
+            METHODS[7].invoke(ensureRoot(method), invoker);
         } catch (InvocationTargetException | IllegalAccessException e) {
             e.printStackTrace();
             UNSAFE.throwException(e);
