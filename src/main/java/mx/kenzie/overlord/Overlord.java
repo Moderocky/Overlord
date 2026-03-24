@@ -6,11 +6,11 @@ import org.jetbrains.annotations.Nullable;
 import sun.misc.Unsafe;
 import sun.reflect.ReflectionFactory;
 
-import java.io.File;
 import java.lang.constant.Constable;
 import java.lang.invoke.MethodHandles;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.*;
+import java.lang.invoke.MethodHandle;
 import java.security.AccessController;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
@@ -40,6 +40,12 @@ public final class Overlord {
      * Use at own risk! :)
      */
     public static final ReflectionFactory FACTORY;
+    /**
+     * The internal Lookup.
+     * Use at own risk! :)
+     * */
+    public static MethodHandles.Lookup IMPL_LOOKUP;
+
     public static final boolean IS_COMPRESSED_OOP;
     public static final boolean IS_COMPRESSED_KLASS;
     /**
@@ -237,6 +243,12 @@ public final class Overlord {
             METHODS[10].setAccessible(true);
         } catch (NoSuchMethodException | IllegalStateException e) {
             System.out.println("Could not expose getMethod0.");
+        }
+        try {
+            METHODS[12] = MethodHandles.Lookup.class.getDeclaredMethod("makeHiddenClassDefiner", byte[].class, boolean.class, int.class);
+            METHODS[12].setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            System.out.println("Could not expose makeHiddenClassDefiner.");
         }
     }
 
@@ -842,14 +854,33 @@ public final class Overlord {
     }
 
     /**
-     * Defines a new anonymous class inside the given class.
+     * Defines a new anonymous class inside the given class. The class path patches are ignored in JDK 17 and above.
      *
      * @param host             the enclosing class
      * @param bytecode         the class bytecode
      * @param classPathPatches the CP patches
      */
     public static void defineAnonymousClass(Class<?> host, byte[] bytecode, Object[] classPathPatches) {
-        UNSAFE.defineAnonymousClass(host, bytecode, classPathPatches);
+        try {
+            final Method method = UNSAFE.getClass().getDeclaredMethod("defineAnonymousClass", Class.class, byte[].class, Object[].class);
+            method.invoke(null, host, bytecode, classPathPatches);
+        } catch (InvocationTargetException | NoSuchMethodException | IllegalAccessException e) {
+            defineAnonymousClass(host, bytecode);
+        }
+    }
+
+    /**
+     * Defines a new anonymous class inside the given class.
+     *
+     * @param host             the enclosing class
+     * @param bytecode         the class bytecode
+     */
+    public static void defineAnonymousClass(Class<?> host, byte[] bytecode) {
+        try {
+            MethodHandles.privateLookupIn(host, IMPL_LOOKUP).defineHiddenClass(bytecode, true, MethodHandles.Lookup.ClassOption.NESTMATE);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
