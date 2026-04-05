@@ -41,11 +41,15 @@ class OxfordSecrets {
             Overlord.allowAccess(OxfordSecrets.class, SHARED_SECRETS_CLASS, true);
             for (Field field : OxfordSecrets.class.getDeclaredFields()) {
                 if (Modifier.isFinal(field.getModifiers())) continue;
-                Field declared = SHARED_SECRETS_CLASS.getDeclaredField(field.getName());
-                declared.setAccessible(true);
-                field.set(null, declared.get(null));
+                try {
+                    Field declared = SHARED_SECRETS_CLASS.getDeclaredField(field.getName());
+                    declared.setAccessible(true);
+                    field.set(null, declared.get(null));
+                } catch (NoSuchFieldException e) {
+                    System.out.println("Could not expose " + field.getName() + " from SharedSecrets.");
+                }
             }
-        } catch (ClassNotFoundException | IllegalAccessException | NoSuchFieldException e) {
+        } catch (ClassNotFoundException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }

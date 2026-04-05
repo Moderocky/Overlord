@@ -7,7 +7,7 @@ import java.awt.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.TreeMap;
+import java.util.LinkedHashMap;
 
 @SuppressWarnings("all")
 public class TransformationTest {
@@ -53,7 +53,7 @@ public class TransformationTest {
         HashMap<String, String> map = new HashMap<>();
         map.put("hello", "there");
 
-        TreeMap<?, ?> newMap = Overlord.transform(map, TreeMap.class);
+        LinkedHashMap<?, ?> newMap = Overlord.transform(map, LinkedHashMap.class);
         assert newMap.size() == 1;
         Overlord.transform(map, HashMap.class);
         assert map.get("hello").equals("there");
